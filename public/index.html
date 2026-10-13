@@ -1,8 +1,110 @@
 <!doctype html>
+<html lang="en">
+<head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Skyline</title>
-<style>body{font-family:system-ui;background:#111;color:#eee;text-align:center;padding:4rem 1rem}a{display:inline-block;margin-top:1.5rem;padding:1rem 2rem;background:#4af;color:#000;border-radius:8px;text-decoration:none;font-weight:700}</style>
-<h1>Skyline</h1>
-<p>Android debug build. Allow "install unknown apps" when prompted.</p>
-<a href="skyline.apk" download>Download APK</a>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#70c5ce">
+<title>Flap</title>
+<style>
+  html,body{margin:0;height:100%;background:#1b2a33;overflow:hidden;overscroll-behavior:none}
+  canvas{display:block;width:100vw;height:100dvh;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// Flap: tap / click / Space to flap. Virtual 360x640 world scaled to fit any screen.
+const W = 360, H = 640, GROUND = 70;
+const G = 1500, FLAP = -430, SPEED = 130, GAP = 160, EVERY = 1.5, R = 14, BX = 90; // tuning knobs
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+let scale = 1, ox = 0, oy = 0;
+
+function fit() {
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = innerWidth * dpr; cv.height = innerHeight * dpr;
+  scale = Math.min(cv.width / W, cv.height / H);
+  ox = (cv.width - W * scale) / 2; oy = (cv.height - H * scale) / 2;
+}
+addEventListener('resize', fit); fit();
+
+let best = 0;
+try { best = +localStorage.getItem('flapBest') || 0; } catch (e) {}
+
+let state = 'ready', y, vy, pipes, t, score, scroll = 0, dead = 0;
+
+function reset() { y = H / 2 - 40; vy = 0; pipes = []; t = EVERY - 0.6; score = 0; state = 'ready'; }
+reset();
+
+function flap() {
+  if (state === 'dead') { if (dead > 0.5) reset(); return; }
+  if (state === 'ready') state = 'play';
+  vy = FLAP;
+}
+addEventListener('pointerdown', e => { e.preventDefault(); flap(); }, { passive: false });
+addEventListener('keydown', e => { if (e.code === 'Space' || e.code === 'ArrowUp') { e.preventDefault(); flap(); } });
+
+function die() {
+  state = 'dead'; dead = 0;
+  if (score > best) { best = score; try { localStorage.setItem('flapBest', best); } catch (e) {} }
+  if (navigator.vibrate) navigator.vibrate(80);
+}
+
+function update(dt) {
+  scroll = (scroll + SPEED * dt) % 24;
+  if (state === 'ready') { y = H / 2 - 40 + Math.sin(performance.now() / 250) * 8; return; }
+  if (state === 'dead') { dead += dt; vy += G * dt; y = Math.min(y + vy * dt, H - GROUND - R); return; }
+  vy += G * dt; y += vy * dt;
+  t += dt;
+  if (t >= EVERY) { t = 0; pipes.push({ x: W + 30, gy: 110 + Math.random() * (H - GROUND - GAP - 170), scored: false }); }
+  for (const p of pipes) {
+    p.x -= SPEED * dt;
+    if (!p.scored && p.x + 26 < BX - R) { p.scored = true; score++; }
+    if (BX + R > p.x - 26 && BX - R < p.x + 26 && (y - R < p.gy || y + R > p.gy + GAP)) die();
+  }
+  pipes = pipes.filter(p => p.x > -60);
+  if (y + R > H - GROUND || y - R < 0) { y = Math.max(R, Math.min(y, H - GROUND - R)); die(); }
+}
+
+function text(s, x, yy, size, color = '#fff') {
+  ctx.font = `800 ${size}px system-ui,sans-serif`; ctx.textAlign = 'center';
+  ctx.lineWidth = size / 6; ctx.strokeStyle = '#0006'; ctx.strokeText(s, x, yy);
+  ctx.fillStyle = color; ctx.fillText(s, x, yy);
+}
+
+function draw() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = '#1b2a33'; ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.setTransform(scale, 0, 0, scale, ox, oy);
+  ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip();
+  const sky = ctx.createLinearGradient(0, 0, 0, H); sky.addColorStop(0, '#4fb3d9'); sky.addColorStop(1, '#bfe9f2');
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+  for (const p of pipes) {
+    ctx.fillStyle = '#5cb85c'; ctx.strokeStyle = '#2f6b2f'; ctx.lineWidth = 3;
+    for (const [py, ph] of [[0, p.gy], [p.gy + GAP, H - GROUND - p.gy - GAP]]) {
+      ctx.fillRect(p.x - 26, py, 52, ph); ctx.strokeRect(p.x - 26, py, 52, ph);
+    }
+  }
+  ctx.fillStyle = '#ded895'; ctx.fillRect(0, H - GROUND, W, GROUND);
+  ctx.fillStyle = '#8ed16b'; ctx.fillRect(0, H - GROUND, W, 12);
+  ctx.fillStyle = '#7cbf5a';
+  for (let x = -scroll; x < W; x += 24) ctx.fillRect(x, H - GROUND, 12, 12);
+  ctx.save(); ctx.translate(BX, y); ctx.rotate(Math.max(-0.5, Math.min(1.2, vy / 700)));
+  ctx.fillStyle = '#ffd23f'; ctx.beginPath(); ctx.arc(0, 0, R, 0, 7); ctx.fill();
+  ctx.strokeStyle = '#a77d00'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(6, -4, 5, 0, 7); ctx.fill();
+  ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(8, -4, 2, 0, 7); ctx.fill();
+  ctx.fillStyle = '#ff7043'; ctx.fillRect(R - 2, 0, 9, 5);
+  ctx.restore();
+  if (state !== 'ready') text(score, W / 2, 90, 56);
+  if (state === 'ready') { text('FLAP', W / 2, 200, 64); text('tap to start', W / 2, 360, 24); text('best ' + best, W / 2, 396, 20); }
+  if (state === 'dead') { text('Game over', W / 2, 230, 44); text('score ' + score + '   best ' + best, W / 2, 280, 22); if (dead > 0.5) text('tap to retry', W / 2, 340, 24); }
+}
+
+let last = performance.now();
+(function loop(now) {
+  update(Math.min((now - last) / 1000, 0.033)); last = now; draw();
+  requestAnimationFrame(loop);
+})(last);
+</script>
+</body>
+</html>
