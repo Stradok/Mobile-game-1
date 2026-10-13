@@ -1,0 +1,14 @@
+{
+  "walk_speed": 9.0,
+  "ground_accel": 60.0,
+  "air_accel": 6.0,
+  "jump_velocity": 10.0,
+  "gravity": 24.0,
+  "swing_range": 80.0,
+  "swing_min_dist": 8.0,
+  "swing_steer": 16.0,
+  "swing_rope_shorten": 3.0,
+  "swing_min_rope": 10.0,
+  "swing_max_speed": 60.0,
+  "release_boost": 1.12
+}
